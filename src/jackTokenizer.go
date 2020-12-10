@@ -4,7 +4,10 @@ import (
 	"bufio"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"github.com/kr/pretty"
 )
 
 type JackTokenizer struct {
@@ -17,6 +20,7 @@ type JackTokenizer struct {
 	keywordLists []string
 	symbolLists  []string
 	lines        []string
+	currentIndex int
 }
 
 func (tokenizer JackTokenizer) GetKeyWord() KeyWord {
@@ -44,8 +48,8 @@ func (tokenizer JackTokenizer) GetIdentifier() string {
 }
 
 func (tokenizer JackTokenizer) GetIntVal() int64 {
-	if tokenizer.tokenType != StringConst {
-		panic("token type should be val")
+	if tokenizer.tokenType != INTCONST {
+		panic("token type should be int")
 	}
 
 	return tokenizer.intVal
@@ -60,7 +64,6 @@ func (tokenizer JackTokenizer) GetStringVal() string {
 }
 
 func New(filePath string) *JackTokenizer {
-	// コンストラクタの関数内で、構造体をnew
 	tokenizer := new(JackTokenizer)
 	tokenizer.keywordLists = []string{
 		"class", "constructor", "function", "method", "field", "static",
@@ -74,26 +77,6 @@ func New(filePath string) *JackTokenizer {
 		"&", "|", "<", ">", "=", "~",
 	}
 
-	// justString := strings.Join(tokenizer.keywordLists, " ")
-
-	// concatSymbols := append(tokenizer.keywordLists, tokenizer.symbolLists...)
-
-	// joinedString := strings.Join(tokenizer.symbolLists, ",")
-	// fmt.Println("joined string", joinedString)
-
-	// // 以下、構造体の各フィールドを引数で受け取った値に設定
-	// l.Name = name
-	// l.LangType = langType
-	// // 構造体のインスタンスを返す
-	// return l
-
-	// files, err := ioutil.ReadFile(filePath)
-	// if err != nil {
-	// 	panic(err)
-	// }
-
-	// fmt.Println("cpy:", string(files))
-
 	fp, err := os.Open(filePath)
 	if err != nil {
 		panic(err)
@@ -101,12 +84,10 @@ func New(filePath string) *JackTokenizer {
 	defer fp.Close()
 
 	scanner := bufio.NewScanner(fp)
-	re := regexp.MustCompile(`//|/.*|.*/`)
+	re := regexp.MustCompile(`^//|^/.*`)
 
 	for scanner.Scan() {
-		text := scanner.Text()
-		// normal comment out
-		text = strings.TrimSpace(text)
+		text := strings.TrimSpace(scanner.Text())
 
 		if re.MatchString(text) {
 			continue
@@ -116,29 +97,131 @@ func New(filePath string) *JackTokenizer {
 			continue
 		}
 
-		line := tokenizer.Split(text)
-		tokenizer.lines = append(tokenizer.lines, line...)
+		// trim the inline comment
 
+		text = trimInLIneComment(text)
+		pretty.Println(text)
+
+		line := tokenizer.split(text)
+		tokenizer.lines = append(tokenizer.lines, line...)
 	}
+
+	for tokenizer.Advance() {
+	}
+
 	return tokenizer
 }
 
 // HasMoreTokens checks if has more token
 func (tokenizer JackTokenizer) hasMoreTokens() bool {
-	//code
-	return false
+	return tokenizer.currentIndex < len(tokenizer.lines)
+}
+func trimInLIneComment(text string) string {
+	if strings.Contains(text, "/") {
+		index := strings.Index(text, "/")
+		return text[:index]
+	}
+	return text
 }
 
 // Advance gets next token and it can be called
-func (tokenizer JackTokenizer) Advance() bool {
+func (tokenizer *JackTokenizer) Advance() bool {
 	if tokenizer.hasMoreTokens() {
+		tokenizer.tokenType = tokenizer.getTokenType()
+		// pretty.Println("current word is %v, tokenType %v", tokenizer.getCurrentWord(), tokenizer.tokenType)
+
+		if tokenizer.isKeyword() {
+			tokenizer.keyWord = tokenizer.convertStringToKeyWord()
+			pretty.Println("keyword is", tokenizer.keyWord)
+		} else if tokenizer.isSymbol() {
+			tokenizer.symbol = tokenizer.getCurrentWord()
+			pretty.Println("symbol is", tokenizer.symbol)
+
+		} else if tokenizer.isStringConst() {
+			tokenizer.stringVal = tokenizer.getCurrentWord()
+			pretty.Println("string val is", tokenizer.stringVal)
+
+		} else if tokenizer.isIntConst() {
+			tokenizer.intVal = tokenizer.GetIntVal()
+			pretty.Println("int const is", tokenizer.intVal)
+		} else {
+			tokenizer.identifier = tokenizer.getCurrentWord()
+			pretty.Println("identifier is", tokenizer.identifier)
+		}
+
+		// pretty.Println("current index is  %v", tokenizer.currentIndex)
+
+		tokenizer.currentIndex++
+
 		return true
-	} else {
-		return false
 	}
+	return false
 }
 
-func (tokenizer JackTokenizer) Split(line string) []string {
+func (tokenizer *JackTokenizer) getTokenType() TokenType {
+	if tokenizer.isKeyword() {
+		return KEYWORD
+	} else if tokenizer.isSymbol() {
+		return SYMBOL
+	} else if tokenizer.isStringConst() {
+		return StringConst
+	} else if tokenizer.isIntConst() {
+		return INTCONST
+	}
+
+	return IDENTIFIER
+}
+
+func (tokenizer JackTokenizer) convertStringToKeyWord() KeyWord {
+	word := tokenizer.getCurrentWord()
+
+	switch word {
+	case "class":
+		return CLASS
+	case "method":
+		return METHOD
+	case "function":
+		return FUNCTION
+	case "constructor":
+		return CONSTRUCTOR
+	case "int":
+		return INT
+	case "boolean":
+		return BOOLEAN
+	case "char":
+		return CHAR
+	case "void":
+		return VOID
+	case "var":
+		return VAR
+	case "static":
+		return STATIC
+	case "field":
+		return FILED
+	case "let":
+		return LET
+	case "do":
+		return DO
+	case "if":
+		return IF
+	case "else":
+		return ELSE
+	case "while":
+		return WHILE
+	case "return":
+		return RETURN
+	case "true":
+		return TRUE
+	case "false":
+		return FALSE
+	case "null":
+		return NULL
+	case "this":
+		return THIS
+	}
+	panic("what" + word)
+}
+func (tokenizer JackTokenizer) split(line string) []string {
 	fields := []string{}
 
 	last := 0
@@ -183,6 +266,13 @@ func (tokenizer JackTokenizer) Split(line string) []string {
 	return fields
 }
 
+func (tokenizer JackTokenizer) isKeyword() bool {
+	return contains(tokenizer.keywordLists, tokenizer.getCurrentWord())
+}
+
+func (tokenizer JackTokenizer) isSymbol() bool {
+	return contains(tokenizer.symbolLists, tokenizer.getCurrentWord())
+}
 func contains(s []string, e string) bool {
 	for _, a := range s {
 		if a == string(e) {
@@ -192,36 +282,55 @@ func contains(s []string, e string) bool {
 	return false
 }
 
-type TokenType int
+func (tokenizer JackTokenizer) isStringConst() bool {
+	return string(tokenizer.getCurrentWord()[0]) == "\""
+}
+func (tokenizer JackTokenizer) isIntConst() bool {
+	_, err := strconv.Atoi(tokenizer.getCurrentWord())
+	return err == nil
+}
+
+func (tokenizer JackTokenizer) getInt() int {
+	val, _ := strconv.Atoi(tokenizer.getCurrentWord())
+	return val
+}
+
+func (tokenizer JackTokenizer) getCurrentWord() string {
+	return tokenizer.lines[tokenizer.currentIndex]
+}
+
+type TokenType string
 
 const (
-	KEYWORD TokenType = iota
-	SYMBOL
-	IDENTIFIER
-	StringConst
+	KEYWORD     = TokenType("token")
+	SYMBOL      = TokenType("symbol")
+	IDENTIFIER  = TokenType("identifer")
+	INTCONST    = TokenType("InConst")
+	StringConst = TokenType("StringConst")
 )
 
-type KeyWord int
+type KeyWord string
 
 const (
-	CLASS KeyWord = iota
-	METHOD
-	FUNCTION
-	CONSTRUCTOR
-	INT
-	BOOLEAN
-	CHAR
-	VOID
-	STATIC
-	FILED
-	LET
-	DL
-	IF
-	ELSE
-	WHILE
-	RETURN
-	TRUE
-	FALSE
-	NULL
-	THIS
+	CLASS       = KeyWord("class")
+	METHOD      = KeyWord("method")
+	FUNCTION    = KeyWord("function")
+	CONSTRUCTOR = KeyWord("contactor")
+	INT         = KeyWord("int")
+	BOOLEAN     = KeyWord("boolean")
+	CHAR        = KeyWord("char")
+	VOID        = KeyWord("void")
+	VAR         = KeyWord("var")
+	STATIC      = KeyWord("static")
+	FILED       = KeyWord("filed")
+	LET         = KeyWord("let")
+	DO          = KeyWord("do")
+	IF          = KeyWord("if")
+	ELSE        = KeyWord("else")
+	WHILE       = KeyWord("while")
+	RETURN      = KeyWord("return")
+	TRUE        = KeyWord("true")
+	FALSE       = KeyWord("false")
+	NULL        = KeyWord("null")
+	THIS        = KeyWord("this")
 )
